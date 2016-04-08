@@ -1,6 +1,6 @@
 // Alamofire.swift
 //
-// Copyright (c) 2014–2015 Alamofire Software Foundation (http://alamofire.org/)
+// Copyright (c) 2014–2016 Alamofire Software Foundation (http://alamofire.org/)
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -21,11 +21,6 @@
 // THE SOFTWARE.
 
 import Foundation
-
-/// Alamofire errors
-public let AlamofireErrorDomain = "com.alamofire.error"
-public let AlamofireInputStreamReadFailed = -6000
-public let AlamofireOutputStreamWriteFailed = -6001
 
 // MARK: - URLStringConvertible
 
@@ -317,6 +312,8 @@ public func upload(
 
     - parameter method:      The HTTP method.
     - parameter URLString:   The URL string.
+    - parameter parameters:  The parameters. `nil` by default.
+    - parameter encoding:    The parameter encoding. `.URL` by default.
     - parameter headers:     The HTTP headers. `nil` by default.
     - parameter destination: The closure used to determine the destination of the downloaded file.
 
@@ -325,11 +322,20 @@ public func upload(
 public func download(
     method: Method,
     _ URLString: URLStringConvertible,
+    parameters: [String: AnyObject]? = nil,
+    encoding: ParameterEncoding = .URL,
     headers: [String: String]? = nil,
     destination: Request.DownloadFileDestination)
     -> Request
 {
-    return Manager.sharedInstance.download(method, URLString, headers: headers, destination: destination)
+    return Manager.sharedInstance.download(
+        method,
+        URLString,
+        parameters: parameters,
+        encoding: encoding,
+        headers: headers,
+        destination: destination
+    )
 }
 
 /**

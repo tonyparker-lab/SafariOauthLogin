@@ -1,6 +1,6 @@
 // Validation.swift
 //
-// Copyright (c) 2014–2015 Alamofire Software Foundation (http://alamofire.org/)
+// Copyright (c) 2014–2016 Alamofire Software Foundation (http://alamofire.org/)
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -25,10 +25,21 @@ import Foundation
 extension Request {
 
     /**
+        Used to represent whether validation was successful or encountered an error resulting in a failure.
+
+        - Success: The validation was successful.
+        - Failure: The validation failed encountering the provided error.
+    */
+    public enum ValidationResult {
+        case Success
+        case Failure(NSError)
+    }
+
+    /**
         A closure used to validate a request that takes a URL request and URL response, and returns whether the 
         request was valid.
     */
-    public typealias Validation = (NSURLRequest?, NSHTTPURLResponse) -> Bool
+    public typealias Validation = (NSURLRequest?, NSHTTPURLResponse) -> ValidationResult
 
     /**
         Validates the request, using the specified closure.
@@ -41,8 +52,11 @@ extension Request {
     */
     public func validate(validation: Validation) -> Self {
         delegate.queue.addOperationWithBlock {
-            if let response = self.response where self.delegate.error == nil && !validation(self.request, response) {
-                self.delegate.error = NSError(domain: AlamofireErrorDomain, code: -1, userInfo: nil)
+            if let
+                response = self.response where self.delegate.error == nil,
+                case let .Failure(error) = validation(self.request, response)
+            {
+                self.delegate.error = error
             }
         }
 
@@ -62,7 +76,12 @@ extension Request {
     */
     public func validate<S: SequenceType where S.Generator.Element == Int>(statusCode acceptableStatusCode: S) -> Self {
         return validate { _, response in
-            return acceptableStatusCode.contains(response.statusCode)
+            if acceptableStatusCode.contains(response.statusCode) {
+                return .Success
+            } else {
+                let failureReason = "Response status code was unacceptable: \(response.statusCode)"
+                return .Failure(Error.errorWithCode(.StatusCodeValidationFailed, failureReason: failureReason))
+            }
         }
     }
 
@@ -75,7 +94,7 @@ extension Request {
         init?(_ string: String) {
             let components: [String] = {
                 let stripped = string.stringByTrimmingCharactersInSet(NSCharacterSet.whitespaceAndNewlineCharacterSet())
-                let split = stripped.substringToIndex(stripped.rangeOfString(";")?.endIndex ?? stripped.endIndex)
+                let split = stripped.substringToIndex(stripped.rangeOfString(";")?.startIndex ?? stripped.endIndex)
                 return split.componentsSeparatedByString("/")
             }()
 
@@ -111,24 +130,37 @@ extension Request {
     */
     public func validate<S : SequenceType where S.Generator.Element == String>(contentType acceptableContentTypes: S) -> Self {
         return validate { _, response in
+            guard let validData = self.delegate.data where validData.length > 0 else { return .Success }
+
             if let
                 responseContentType = response.MIMEType,
                 responseMIMEType = MIMEType(responseContentType)
             {
                 for contentType in acceptableContentTypes {
                     if let acceptableMIMEType = MIMEType(contentType) where acceptableMIMEType.matches(responseMIMEType) {
-                        return true
+                        return .Success
                     }
                 }
             } else {
                 for contentType in acceptableContentTypes {
                     if let MIMEType = MIMEType(contentType) where MIMEType.type == "*" && MIMEType.subtype == "*" {
-                        return true
+                        return .Success
                     }
                 }
             }
 
-            return false
+            let failureReason: String
+
+            if let responseContentType = response.MIMEType {
+                failureReason = (
+                    "Response content type \"\(responseContentType)\" does not match any acceptable " +
+                    "content types: \(acceptableContentTypes)"
+                )
+            } else {
+                failureReason = "Response content type was missing and acceptable content type does not match \"*/*\""
+            }
+
+            return .Failure(Error.errorWithCode(.ContentTypeValidationFailed, failureReason: failureReason))
         }
     }
 
